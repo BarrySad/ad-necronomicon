@@ -39,7 +39,7 @@ AD Necronomicon has three subcommands:
 
 ### enum-access: Discover Who Can Access the Recycle Bin
 
-Enumerates the Reanimate Tombstones extended right on the domain object and List Contents access on the Deleted Objects container. Runs from a low-privilege account. Generates no events in Windows.
+Enumerates the Reanimate Tombstones extended right on the domain object and List Contents access on the Deleted Objects container. Runs from a low-privilege account. Standard LDAP read request, generates no events in Windows.
 
 ```bash
 necronomicon enum-access -d corp.local -u lowpriv -k -dc dc01.corp.local
@@ -55,7 +55,7 @@ Optional: `-o findings.json` to write JSON output.
 
 ### enum-bin: Enumerate Deleted Objects
 
-Lists all deleted objects in the Recycle Bin, grouped by type and restorability. Requires List Contents on the Deleted Objects container. Generates no events in Windows.
+Lists all deleted objects in the Recycle Bin, grouped by type and restorability. Requires List Contents on the Deleted Objects container. Standard LDAP read request, generates no events in Windows.
 
 ```bash
 necronomicon enum-bin -d corp.local -u admin -k -dc dc01.corp.local
