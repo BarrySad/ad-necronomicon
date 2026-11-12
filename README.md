@@ -10,7 +10,7 @@ Built on [Impacket](https://github.com/blacklanternsecurity/impacket).
 
 When the AD Recycle Bin is enabled, deleted objects are preserved with all their attributes intact for a configurable retention period (default 180 days). Objects in this state can be restored via LDAP by removing the `isDeleted` attribute and setting a new `distinguishedName`.
 
-The interesting thing is that LDAP modifications can be bundled with the restore operation. This means attributes like `nTSecurityDescriptor`, `servicePrincipalName`, `userAccountControl`, `msDS-AllowedToActOnBehalfOfOtherIdentity`, and others can be injected in the same request that brings the object back to life. Windows logs only the restore itself (5137 object created + 5138 object undeleted) — the injected attribute changes do not generate separate 5136 (object modified), 4738/4742 (account changed), or 4670 (permissions changed) events.
+The interesting thing is that LDAP modifications can be bundled with the restore operation. This means attributes like `nTSecurityDescriptor`, `servicePrincipalName`, `userAccountControl`, `msDS-AllowedToActOnBehalfOfOtherIdentity`, and others can be injected in the same request that brings the object back to life. Windows logs only the restore itself (5137 object created + 5138 object undeleted). The injected attribute changes do not generate separate 5136 (object modified), 4738/4742 (account changed), or 4670 (permissions changed) events.
 
 ### Requirements
 
@@ -37,7 +37,7 @@ This installs the `necronomicon` command line tool and pulls in all dependencies
 
 AD Necronomicon has three subcommands:
 
-### enum-access — Discover Who Can Access the Recycle Bin
+### enum-access: Discover Who Can Access the Recycle Bin
 
 Enumerates the Reanimate Tombstones extended right on the domain object and List Contents access on the Deleted Objects container. Runs from a low-privilege account. Generates no events in Windows.
 
@@ -53,7 +53,7 @@ Output includes:
 
 Optional: `-o findings.json` to write JSON output.
 
-### enum-bin — Enumerate Deleted Objects
+### enum-bin: Enumerate Deleted Objects
 
 Lists all deleted objects in the Recycle Bin, grouped by type and restorability. Requires List Contents on the Deleted Objects container. Generates no events in Windows.
 
@@ -67,7 +67,7 @@ Output includes:
 - Objects with `description` or `info` fields populated (potential credential exposure)
 - Structured JSON output written to `deleted_objects.json` (override with `-o`)
 
-### restore — Restore Deleted Objects
+### restore: Restore Deleted Objects
 
 Restores a deleted object from the Recycle Bin. Optionally injects arbitrary LDAP attribute modifications during the restore. Targets are specified by GUID, SID, sAMAccountName, or name. Restoring an account creates a 5137 + 5138 event pair in Windows. Injected attributes generate no additional events.
 
