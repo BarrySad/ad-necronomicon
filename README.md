@@ -2,9 +2,9 @@
 ![Python 3 compatible](https://img.shields.io/badge/python-3.x-blue.svg)
 ![License: MIT](https://img.shields.io/pypi/l/ad-necronomicon.svg)
 
-AD Necronomicon is a Python tool for enumerating and exploiting the Active Directory Recycle Bin. It discovers who can access deleted objects, enumerates the recycle bin contents, and restores deleted objects with attacker-controlled attributes injected during the undelete operation.
+AD Necronomicon is a proof of concept Python tool for enumerating and exploiting the Active Directory Recycle Bin. It discovers who can access deleted objects, enumerates the recycle bin contents, and restores deleted objects with attacker-controlled attributes injected during the undelete operation.
 
-Built on [Impacket](https://github.com/blacklanternsecurity/impacket).
+Built on Black Lantern Security's fork of [Impacket](https://github.com/blacklanternsecurity/impacket).
 
 ## How It Works
 
