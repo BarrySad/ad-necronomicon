@@ -17,7 +17,7 @@ LOCAL_SYSTEM_SID = sid_to_bytes('S-1-5-18')
 EVERYONE_SID = sid_to_bytes('S-1-1-0')
 
 
-# ── SD construction helpers ──────────────────────────────────────────
+# SD construction helpers
 
 def _build_ace(trustee_sid_bytes, mask=0x000F01FF):
     ace_size = 4 + 4 + len(trustee_sid_bytes)
@@ -91,8 +91,7 @@ def build_principal_full_sd(principal_sid_bytes):
     return _build_sd(dacl, owner_sid=principal_sid_bytes)
 
 
-# ── Target discovery ─────────────────────────────────────────────────
-
+# Target discovery
 DEL_MARKER = '\\0ADEL:'
 
 FIND_ATTRIBUTES = [
@@ -149,7 +148,7 @@ def _validate_target(entry):
     return None
 
 
-# ── Change builder ───────────────────────────────────────────────────
+# Change builder
 
 def build_changes(set_attrs=None, add_attrs=None, del_attrs=None,
                   sd_everyone=False, sd_principal=None, sd_rbcd=None):
@@ -189,7 +188,7 @@ def _split_attr_value(pair):
     return attr.strip(), val
 
 
-# ── Restore executor ─────────────────────────────────────────────────
+# Restore executor 
 
 def execute_restore(session, entry, changes, target_ou=None, new_name=None):
     attrs = entry['attributes']
@@ -226,7 +225,7 @@ def execute_restore(session, entry, changes, target_ou=None, new_name=None):
     return False, msg
 
 
-# ── Main orchestration ───────────────────────────────────────────────
+# Main orchestration 
 
 def run_restore(session, target_id, changes, target_ou=None, new_name=None,
                 enable=False):

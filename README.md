@@ -4,7 +4,7 @@
 
 AD Necronomicon is a Python tool for enumerating and exploiting the Active Directory Recycle Bin. It discovers who can access deleted objects, enumerates the recycle bin contents, and restores deleted objects with attacker-controlled attributes injected during the undelete operation.
 
-Built on [Impacket](https://github.com/blacklanternsecurity/impacket) with Kerberos-first authentication and no NTLM fallback by default.
+Built on [Impacket](https://github.com/blacklanternsecurity/impacket).
 
 ## How It Works
 
@@ -75,7 +75,7 @@ Restores a deleted object from the Recycle Bin. Optionally injects arbitrary LDA
 # Plain restore
 necronomicon restore -d corp.local -u admin -k -dc dc01.corp.local --target victim
 
-# Restore and enable the account
+# Restore and enable the account. Does not generate a 4722 (account enabled) event.
 necronomicon restore -d corp.local -u admin -k -dc dc01.corp.local --target victim --enable
 
 # Restore with attribute injection
