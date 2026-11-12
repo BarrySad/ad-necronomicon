@@ -9,6 +9,8 @@ from ldap3.utils.dn import escape_rdn
 from necronomicon.connection import LDAPSession, LDAP_SERVER_SHOW_DELETED_OID
 from necronomicon.utils import format_sid, sid_to_bytes, parse_guid
 
+ACCOUNTDISABLE = 0x0002
+
 SHOW_DELETED = (LDAP_SERVER_SHOW_DELETED_OID, True, None)
 
 LOCAL_SYSTEM_SID = sid_to_bytes('S-1-5-18')
@@ -226,7 +228,8 @@ def execute_restore(session, entry, changes, target_ou=None, new_name=None):
 
 # ── Main orchestration ───────────────────────────────────────────────
 
-def run_inject(session, target_id, changes, target_ou=None, new_name=None):
+def run_restore(session, target_id, changes, target_ou=None, new_name=None,
+                enable=False):
     matches = find_target(session, target_id)
     if not matches:
         logging.error('No deleted object found matching: %s', target_id)
@@ -246,6 +249,13 @@ def run_inject(session, target_id, changes, target_ou=None, new_name=None):
     if err:
         logging.error('%s', err)
         return False
+
+    if enable and 'userAccountControl' not in changes:
+        uac = _first(entry['attributes'].get('userAccountControl'))
+        if uac is not None:
+            uac = int(uac) & ~ACCOUNTDISABLE
+            changes['userAccountControl'] = [(MODIFY_REPLACE, [str(uac)])]
+            logging.info('Enabling account: UAC 0x%x', uac)
 
     obj_classes = entry['attributes'].get('objectClass', [])
     obj_type = obj_classes[-1].lower() if obj_classes else 'unknown'

