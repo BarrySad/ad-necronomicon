@@ -1,0 +1,6 @@
+dnspython
+ldap3>=2.5,!=2.5.2,!=2.5.0,!=2.6
+pyasn1>=0.4
+pycryptodome
+impacket
+cryptography
